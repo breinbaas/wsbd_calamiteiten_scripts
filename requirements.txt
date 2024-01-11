@@ -1,2 +1,11 @@
 pyshp
 pandas
+pyproj
+shapely
+simplejson
+pydantic==1.10.12
+pydantic[dotenv]
+requests
+jinja2
+matplotlib
+zipp
