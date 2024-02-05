@@ -6,12 +6,15 @@ from leveelogic.deltares.dstability import DStability
 from leveelogic.helpers import case_insensitive_glob
 import numpy as np
 from leveelogic.deltares.algorithms.algorithm_berm_wsbd import AlgorithmBermWSBD
+import logging
 
-PATH_TO_STIXFILES = (
-    "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles"
+PATH_TO_STIXFILES = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles"
+OUTPUT_PATH = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\Bermen"
+CALCULATIONS_PATH = (
+    "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\Bermen\\calculations"
 )
-OUTPUT_PATH = "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\Bermen"
-CALCULATIONS_PATH = "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\Bermen\\calculations"
+LOG_FILE = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\Bermen\\bermen.log"
+
 
 SF_REQUIRED = 1.20
 MIN_BERM_HEIGHT = 0.5
@@ -23,17 +26,25 @@ HEIGHT_STEP = 0.25
 MAX_WIDTH = 10.0
 MAX_HEIGHT = 2.0
 BERM_MATERIAAL = "Dijksmateriaal (klei)_K4_Su"
+SLOOT_MATERIAAL = "Dijksmateriaal (klei)_K4_Su"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    filemode="w",
+    format="%(asctime)s,%(msecs)d %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
 
 files = case_insensitive_glob(PATH_TO_STIXFILES, ".stix")
 
 
 for file in files:
+    logging.info(f"Handling file '{file}'")
     filename = Path(file).stem
     dtcode, s = filename.split("_")
     start_chainage = float(s.split("-")[0])
     end_chainage = float(s.split("-")[1].replace(".stix", ""))
-
-    flog = open(Path(OUTPUT_PATH) / f"{filename}.log", "w")
 
     # models = []
 
@@ -41,9 +52,13 @@ for file in files:
     # the current SF (no berm)
     # the SF with the smallest berm
     # the SF with the largest berm
+    # the SF with a filled ditch (if a ditch is present)
 
+    ## INITIAL MODEL
     ds_initial = DStability.from_stix(file)
     ds_initial.model.filename = "ini.stix"
+
+    ## MINIMAL BERM
     ds_min_berm = DStability.from_stix(file)
     w = MIN_BERM_WIDTH
     h = MIN_BERM_HEIGHT
@@ -55,8 +70,15 @@ for file in files:
         slope_bottom=SLOPE_BOTTOM,
         slope_top=SLOPE_TOP,
     )
-    ds_min_berm = alg.execute()
+    try:
+        ds_min_berm = alg.execute()
+    except Exception as e:
+        logging.info(f"Error creating berm with width={w:.2f} and height={h:.2f}.")
+        continue
+
     ds_min_berm.model.filename = "min.stix"
+
+    ## MAXIMUM BERM
     ds_max_berm = DStability.from_stix(file)
     w = MAX_WIDTH
     h = MAX_HEIGHT
@@ -68,49 +90,81 @@ for file in files:
         slope_bottom=SLOPE_BOTTOM,
         slope_top=SLOPE_TOP,
     )
-    ds_max_berm = alg.execute()
+    try:
+        ds_max_berm = alg.execute()
+    except Exception as e:
+        logging.info(f"Error creating berm with width={w:.2f} and height={h:.2f}.")
+        continue
     ds_max_berm.model.filename = "max.stix"
 
-    bm = gl.BaseModelList(
-        models=[ds_initial.model, ds_min_berm.model, ds_max_berm.model]
-    )
-    newbm = bm.execute(Path(CALCULATIONS_PATH), nprocesses=3)
-    result = {m.filename.stem: m.output[0].FactorOfSafety for m in newbm.models}
+    models = [ds_initial.model, ds_min_berm.model, ds_max_berm.model]
 
+    ## FILLED DITCH
+    if ds_initial.has_ditch:
+        ds_ditch = DStability.from_stix(file)
+
+        alg = AlgorithmBermWSBD(
+            ds=ds_ditch,
+            fill_ditch=True,
+            ditch_soilcode=SLOOT_MATERIAAL,
+        )
+        try:
+            ds_ditch = alg.execute()
+        except Exception as e:
+            logging.info(f"Error filling ditch, '{e}'.")
+            continue
+        ds_ditch.model.filename = "ditch.stix"
+        models.append(ds_ditch.model)
+
+    bm = gl.BaseModelList(models=models)
+
+    newbm = bm.execute(Path(CALCULATIONS_PATH), nprocesses=20)
+    try:
+        result = {m.filename.stem: m.output[0].FactorOfSafety for m in newbm.models}
+    except Exception as e:
+        logging.info(f"Error getting the results of the calculations; '{e}'.")
+        continue
+
+    # check if the intial SF is already high enough
     if result["ini"] > SF_REQUIRED:
-        flog.write(
-            f"The initial safety factor ({result['ini']:.3f}) is already higher than the required safety factor ({SF_REQUIRED:.3f})\n"
+        logging.info(
+            f"The initial safety factor ({result['ini']:.3f}) is already higher than the required safety factor ({SF_REQUIRED:.3f})"
         )
         ds_initial.serialize(
             Path(CALCULATIONS_PATH) / f"solution_{filename}_0.00_0.00.stix"
         )
-        flog.close()
         continue
+    # check if the filled ditch leads to a solution (if there is a ditch to be filled!)
+    elif ds_initial.has_ditch and result["ditch"] > SF_REQUIRED:
+        logging.info(
+            f"The safety factor with a filled ditch ({result['ditch']:.3f}) is higher than the required safety factor ({SF_REQUIRED:.3f})"
+        )
+        ds_initial.serialize(
+            Path(CALCULATIONS_PATH) / f"solution_{filename}_filled_ditch.stix"
+        )
+        continue
+    # check if the smallest berm leads to a solution
     elif result["min"] > SF_REQUIRED:
-        flog.write(
-            f"The safety factor with the minimum berm ({result['min']:.3f}) is higher than the required safety factor ({SF_REQUIRED:.3f})\n"
+        logging.info(
+            f"The safety factor with the minimum berm ({result['min']:.3f}) is higher than the required safety factor ({SF_REQUIRED:.3f})"
         )
         ds_min_berm.serialize(
             Path(CALCULATIONS_PATH)
             / f"solution_{filename}_{MIN_BERM_WIDTH:.2f}_{MIN_BERM_HEIGHT:.2f}.stix"
         )
-        flog.close()
         continue
+    # check if we need to adjust the berm size because the max berm is still not good enough
     elif result["max"] < SF_REQUIRED:
-        flog.write(
-            f"The safety factor with the maximum berm ({result['max']:.3f}) is lower than the required safety factor ({SF_REQUIRED:.3f}). No solution with these parameters.\n"
+        logging.info(
+            f"The safety factor with the maximum berm ({result['max']:.3f}) is lower than the required safety factor ({SF_REQUIRED:.3f}). No solution with these parameters."
         )
         ds_max_berm.serialize(
             Path(CALCULATIONS_PATH)
             / f"NO_solution_{filename}_{MAX_WIDTH:.2f}_{MAX_HEIGHT:.2f}.stix"
         )
-        flog.close()
-        continue
+        continue  # should be continue
 
     # Iterate over solutions
-
-    flog.close()
-    break
 
     # # calculate the initial safety factor
     # ds = DStability.from_stix(file)

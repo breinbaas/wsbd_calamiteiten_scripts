@@ -10,16 +10,16 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from math import log10
 
-from settings import SF_REQUIRED, PF_REQUIRED
+from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = (
-    "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles"
+PATH_TO_STIXFILES = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles"
+PARAMETERS_FILE = (
+    "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles\\parameters.csv"
 )
-PARAMETERS_FILE = "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles\\parameters.csv"
-OUTPUT_PATH = (
-    "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves"
+OUTPUT_PATH = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves"
+CALCULATIONS_PATH = (
+    "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves\\calculations"
 )
-CALCULATIONS_PATH = "C:\\Users\\brein\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves\\calculations"
 
 
 # get the params from the csv file
@@ -117,27 +117,63 @@ for param_line in param_lines:
     ax1.plot(waterlevels, sfs, "o-")
     ax1.set_xlabel("Water level [m tov NAP]")
     ax1.set_ylabel("Safety Factor")
-
     ax2.set_yscale("log")
-    titles = [
-        "hazardous",
-        "unsatisfactory",
-        "poor",
-        "below average",
-        "above average",
-        "good",
-        "high",
-    ]
-    pfss = [0.16, 0.07, 0.02, 5e-3, 1e-3, 1e-5, 1e-7]
-    for t, p in zip(titles, pfss):
-        ax2.plot([xmin, xmax], [p, p], "k--")
-        ax2.text(xmin, p, t)
-    ax2.plot([xmin, xmax], [PF_REQUIRED[dtcode], PF_REQUIRED[dtcode]], "r--")
-    ax2.text(
-        xmin,
-        PF_REQUIRED[dtcode],
-        f"vereiste faalkans ({PF_REQUIRED[dtcode]})",
+
+    p_eis_sig = P_EIS_SIG[dtcode]
+    p_eis_sig_dsn = P_EIS_SIG_DSN[dtcode]
+    p_eis_ond = P_EIS_OND[dtcode]
+    p_eis_ond_dsn = P_EIS_OND_DSN[dtcode]
+
+    aIv = (
+        0,
+        1 / 30 * P_EIS_SIG_DSN[dtcode],
+        "Iv voldoet ruim aan signaleringswaarde",
+        "#00ff00",
     )
+    aIIv = (
+        1 / 30 * P_EIS_SIG_DSN[dtcode],
+        P_EIS_SIG_DSN[dtcode],
+        "IIv voldoet aan signaleringswaarde",
+        "#76933c",
+    )
+    aIIIv = (
+        P_EIS_SIG_DSN[dtcode],
+        P_EIS_OND_DSN[dtcode],
+        "IIIv voldoet aan de ondergrens en mogelijk de signaleringswaarde",
+        "#ffff00",
+    )
+    aIVv = (
+        P_EIS_OND_DSN[dtcode],
+        P_EIS_OND[dtcode],
+        "IVv voldoet mogelijk aan de ondergrens of aan de signaleringwaarde",
+        "#ccc0da",
+    )
+    aVv = (
+        P_EIS_OND[dtcode],
+        30 * P_EIS_OND[dtcode],
+        "Vv voldoet niet aan de ondergrens",
+        "#ff9900",
+    )
+    aVIv = (
+        30 * P_EIS_OND[dtcode],
+        1,
+        "VIv voldoet ruim niet aan de ondergrens",
+        "#ff0000",
+    )
+
+    for top, bottom, label, color in [aIv, aIIv, aIIIv, aIVv, aVv, aVIv]:
+        ax2.add_patch(
+            Rectangle(
+                (xmin, bottom),
+                (xmax - xmin),
+                (top - bottom),
+                facecolor=color,
+                fill=True,
+            )
+        )
+        ax2.plot([xmin, xmax], [bottom, bottom], "k--")
+        ax2.text(xmin, (top + bottom) / 2.0, label)
+
     ax2.plot(waterlevels, pfs, "o-")
     ax2.set_ylim(1e-8, 1.0)
     ax2.set_xlabel("Water level [m tov NAP]")
@@ -150,3 +186,4 @@ for param_line in param_lines:
     )
     figname = f"{dtcode}_{start_chainage:.2f}{end_chainage:.2f}.png"
     fig.savefig(Path(OUTPUT_PATH) / figname)
+    break
