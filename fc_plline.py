@@ -1,4 +1,3 @@
-from leveelogic.helpers import case_insensitive_glob
 from leveelogic.deltares.dstability import DStability
 from leveelogic.deltares.algorithms.algorithm_fc_phreatic_line_wsbd import (
     AlgorithmFCPhreaticLineWSBD,
@@ -8,18 +7,13 @@ from pathlib import Path
 import geolib as gl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from math import log10
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles"
-PARAMETERS_FILE = (
-    "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\StixFiles\\parameters.csv"
-)
-OUTPUT_PATH = "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves"
-CALCULATIONS_PATH = (
-    "E:\\Documents\\Klanten\\WSBD\\Calamiteiten\\Output\\FragilityCurves\\calculations"
-)
+PATH_TO_STIXFILES = "D:\\WSBD\\Calamiteiten\\StixFiles"
+PARAMETERS_FILE = "D:\\WSBD\\Calamiteiten\\StixFiles\\parameters_fc_plline.csv"
+OUTPUT_PATH = "D:\\WSBD\\Calamiteiten\\Output\\FragilityCurves"
+CALCULATIONS_PATH = "D:\\WSBD\\Calamiteiten\\Output\\FragilityCurves\\calculations"
 
 
 # get the params from the csv file
@@ -186,4 +180,4 @@ for param_line in param_lines:
     )
     figname = f"{dtcode}_{start_chainage:.2f}{end_chainage:.2f}.png"
     fig.savefig(Path(OUTPUT_PATH) / figname)
-    break
+    
