@@ -88,7 +88,49 @@ De uitvoer van het script bestaat uit een log bestand waarin het proces en event
 
 ## Bermen werkwijze
 
-### LET OP 
+Voor de berekening van de bermen kunnen dezelfde basis berekeningen (gestript) gebruikt worden als voor de fragility curves. Er dient een parameter bestand te komen met de volgende inhoud;
+
+```
+filename,xmin,zmin,xmax,zmax
+34-1_0.45-0.81.stix,39.5,1.5,51,2.5
+34-1_0.81-2.15.stix,-23,1.5,-12,4.5
+34-1_11.80-12.55.stix,-42.5,1.5,-32,2.5
+```
+
+De eerste parameter is de naam van het bestand (dit volgt dezelfde benaming als die bij de fragility curves) gevolgd door de x en z coordinaat van de rechterbovenhoek van de minimale berm gevolgd door de x en z coordinaat van de rechterbovenhoek van de maximale berm. Bij berekening 34-1_0.45-0.81 wordt er gekeken naar een berm met als rechterbovenhoek (x=39.5, z=1.5) tot een maximale berm met rechterbovenhoek (x=51,z=2.5). Deze parameters kunnen het eenvoudigst bepaald worden door de berekening te openen en te kijken naar geldige berm coordinaten. 
+
+De logica voor de berekeningen is als volgt;
+
+* bereken de initiele veiligheidsfactor en die bij een gedempte sloot en bij een minimale en maximale berm
+* indien de initiele veiligheidsfactor voldoet is er geen berm nodig
+* indien een gedempte sloot tot voldoende veiligheid leidt is dit de oplossing
+* indien de minimale berm tot voldoende veiligheid leidt is dit de oplossing
+* indien de maximale berm nog niet tot een voldoende veilige oplossing leidt is er geen oplossing
+* er worden 10 bermen geinterpoleerd tussen de minimale en maximale berm en de kleinste berm die tot voldoende veiligheid leidt is de oplossing
+
+In het script dienen de volgende constanten te worden opgegeven;
+
+```
+PATH_TO_STIXFILES = "D:\\WSBD\\Calamiteiten\\StixFiles" # het pad naar de originele (gestripte) berekeningen
+PARAMETERS_FILE = "D:\\WSBD\\Calamiteiten\\StixFiles\\parameters_berm.csv" # het parameter bestand
+OUTPUT_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen" # het uitvoer pad
+CALCULATIONS_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\calculations" # het pad voor de berekeningen
+LOG_FILE = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\bermen.log" # het pad naar het log bestand
+DSTABILITY_EXE = (
+    "Y:\\Apps\\Deltares\\Consoles\\DStabilityConsole\\D-Stability Console.exe" 
+) # de locatie van de console voor dstability
+
+
+SLOPE_TOP = 10 # de helling van de bovenzijde van de berm
+SLOPE_BOTTOM = 2 # de helling van de onderzijde van de berm
+BERM_MATERIAAL = "Dijksmateriaal (klei)_K4_Su" # materiaal te gebruiken voor de berm (materiaal moet in de berekening bestaan!)
+SLOOT_MATERIAAL = "Dijksmateriaal (klei)_K4_Su" # materiaal te gebruiken voor de sloot demping (materiaal moet in de berekening bestaan!)
+BERM_SECTIONS = 10  # de hoeveelheid bermen die we tussen min en max willen berekenen, hoe meer hoe langzamer maar ook nauwkeuriger
+```
+
+Let op dat de paden reeds moeten bestaan. Het script maakt deze niet aan.
+
+### Aanpassing geolib
 
 Bij de bermen code dient een bug in de huidige DGeolib bibliotheek te worden opgelost. Dit kan door in de virtuele omgeving naar het bestand ```.venv\Lib\site-packages\geolib\models\dstability\dstability_model.py``` te gaan de volgende regel aan te passen;
 
@@ -101,7 +143,6 @@ door
 ```union = linestring1.union(linestring2, grid_size=1e-3)```
 
 Er is een pull request gemaakt om deze bug op te lossen maar deze is nog niet geimplementeerd in de huidige versie van geolib.
-
 
 ## TODO
 
