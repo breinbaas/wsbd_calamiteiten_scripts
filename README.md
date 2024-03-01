@@ -88,6 +88,19 @@ De uitvoer van het script bestaat uit een log bestand waarin het proces en event
 
 ## Bermen werkwijze
 
+### LET OP 
+
+Bij de bermen code dient een bug in de huidige DGeolib bibliotheek te worden opgelost. Dit kan door in de virtuele omgeving naar het bestand ```.venv\Lib\site-packages\geolib\models\dstability\dstability_model.py``` te gaan de volgende regel aan te passen;
+
+Vervang in de functie ```connect_layers``` de regel
+
+```union = linestring1.union(linestring2)```
+
+door
+
+```union = linestring1.union(linestring2, grid_size=1e-3)``
+
+Er is een pull request gemaakt om deze bug op te lossen maar deze is nog niet geimplementeerd in de huidige versie van geolib.
 
 
 ## TODO
