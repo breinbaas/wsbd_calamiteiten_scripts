@@ -98,7 +98,7 @@ Vervang in de functie ```connect_layers``` de regel
 
 door
 
-```union = linestring1.union(linestring2, grid_size=1e-3)``
+```union = linestring1.union(linestring2, grid_size=1e-3)```
 
 Er is een pull request gemaakt om deze bug op te lossen maar deze is nog niet geimplementeerd in de huidige versie van geolib.
 
