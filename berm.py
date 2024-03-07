@@ -8,13 +8,13 @@ from settings import SF_REQUIRED
 import threading
 import subprocess
 
-PATH_TO_STIXFILES = "D:\\WSBD\\Calamiteiten\\StixFiles"
-PARAMETERS_FILE = "D:\\WSBD\\Calamiteiten\\StixFiles\\parameters_berm.csv"
-OUTPUT_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen"
-CALCULATIONS_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\calculations"
-LOG_FILE = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\bermen.log"
+PATH_TO_STIXFILES = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_berm.csv"
+OUTPUT_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\Bermen"
+CALCULATIONS_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\Bermen\\Calculations"
+LOG_FILE = "D:\\Documents\\Klanten\\Output\\WSBD\\Bermen\\bermen.log"
 DSTABILITY_EXE = (
-    "Y:\\Apps\\Deltares\\Consoles\\DStabilityConsole\\D-Stability Console.exe"
+    "C:\\Program Files (x86)\\Deltares\\D-GEO Suite\\D-Stability 2024.01\\bin\\D-Stability Console.exe"
 )
 
 

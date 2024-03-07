@@ -10,10 +10,12 @@ from matplotlib.patches import Rectangle
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = "D:\\WSBD\\Calamiteiten\\StixFiles"
-PARAMETERS_FILE = "D:\\WSBD\\Calamiteiten\\StixFiles\\parameters_fc_plline.csv"
-OUTPUT_PATH = "D:\\WSBD\\Calamiteiten\\Output\\FragilityCurves"
-CALCULATIONS_PATH = "D:\\WSBD\\Calamiteiten\\Output\\FragilityCurves\\calculations"
+PATH_TO_STIXFILES = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
+OUTPUT_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
+CALCULATIONS_PATH = (
+    "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
+)
 
 
 # get the params from the csv file
@@ -180,4 +182,3 @@ for param_line in param_lines:
     )
     figname = f"{dtcode}_{start_chainage:.2f}{end_chainage:.2f}.png"
     fig.savefig(Path(OUTPUT_PATH) / figname)
-    
