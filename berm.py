@@ -8,11 +8,11 @@ from settings import SF_REQUIRED
 import threading
 import subprocess
 
-PATH_TO_STIXFILES = "D:\\WSBD\\Calamiteiten\\StixFiles"
-PARAMETERS_FILE = "D:\\WSBD\\Calamiteiten\\StixFiles\\parameters_berm.csv"
-OUTPUT_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen"
-CALCULATIONS_PATH = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\calculations"
-LOG_FILE = "D:\\WSBD\\Calamiteiten\\Output\\Bermen\\bermen.log"
+PATH_TO_STIXFILES = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_berm.csv"
+OUTPUT_PATH = "Y:\\Documents\\Klanten\\Output\\WSBD\\Bermen"
+CALCULATIONS_PATH = "Y:\\Documents\\Klanten\\Output\\WSBD\\Bermen\\calculations"
+LOG_FILE = "Y:\\Documents\\Klanten\\Output\\WSBD\\Bermen\\bermen.log"
 DSTABILITY_EXE = (
     "Y:\\Apps\\Deltares\\Consoles\\DStabilityConsole\\D-Stability Console.exe"
 )
@@ -75,10 +75,10 @@ for param_line in param_lines:
 
     ds = DStability.from_stix(Path(PATH_TO_STIXFILES) / dtcode / filename)
 
-    ds_initial = deepcopy(ds)
+    ds_initial = ds.copy(deep=True)
     ds_initial.model.filename = "ini.stix"
 
-    ds_min_berm = deepcopy(ds)
+    ds_min_berm = ds.copy(deep=True)
     ds_min_berm.model.filename = "min.stix"
     alg_min = AlgorithmBermWSBD(
         ds=ds_min_berm,
@@ -95,8 +95,10 @@ for param_line in param_lines:
         continue
 
     ds_min_berm.serialize(Path(CALCULATIONS_PATH) / "min.stix")
+    # extra serialization for debugging purposes
+    ds_min_berm.serialize(str(Path(CALCULATIONS_PATH) / f"{dtcode}_min.stix"))
 
-    ds_max_berm = deepcopy(ds)
+    ds_max_berm = ds.copy(deep=True)
     ds_max_berm.model.filename = "max.stix"
     alg_max = AlgorithmBermWSBD(
         ds=ds_max_berm,
@@ -113,8 +115,10 @@ for param_line in param_lines:
         continue
 
     ds_max_berm.serialize(Path(CALCULATIONS_PATH) / "max.stix")
+    # extra serialization for debugging purposes
+    ds_max_berm.serialize(str(Path(CALCULATIONS_PATH) / f"{dtcode}_max.stix"))
 
-    ds_filled_ditch = deepcopy(ds)
+    ds_filled_ditch = ds.copy(deep=True)
     ds_filled_ditch.model.filename = "ditch.stix"
     alg_fill_ditch = AlgorithmBermWSBD(
         ds=ds_filled_ditch,
@@ -128,6 +132,8 @@ for param_line in param_lines:
         continue
 
     ds_filled_ditch.serialize(Path(CALCULATIONS_PATH) / "ditch.stix")
+    # extra serialization for debugging purposes
+    ds_filled_ditch.serialize(str(Path(CALCULATIONS_PATH) / f"{dtcode}_ditch.stix"))
 
     # calculate these 4
     bm = gl.BaseModelList(
@@ -183,7 +189,7 @@ for param_line in param_lines:
         xr = round(x, 2)
         zr = round(z, 2)
 
-        ds_berm = deepcopy(ds)
+        ds_berm = ds.copy(deep=True)
         alg_berm = AlgorithmBermWSBD(
             ds=ds_berm,
             soilcode=BERM_MATERIAAL,
@@ -197,6 +203,10 @@ for param_line in param_lines:
             filename = str(Path(CALCULATIONS_PATH) / f"berm_{i:0d}.stix")
             print("FN", filename)
             ds_berm.serialize(filename)
+            # extra serialization for debugging purposes
+            ds_berm.serialize(
+                str(Path(CALCULATIONS_PATH) / f"{dtcode}_berm_{i:0d}.stix")
+            )
             threads.append(
                 threading.Thread(target=calculate_sf, args=[filename, result])
             )
