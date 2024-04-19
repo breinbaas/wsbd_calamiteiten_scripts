@@ -1,22 +1,32 @@
 from leveelogic.deltares.dstability import DStability
-from leveelogic.deltares.algorithms.algorithm_fc_phreatic_line_wsbd import (
-    AlgorithmFCPhreaticLineWSBD,
+from leveelogic.deltares.algorithms.algorithm_phreatic_line import (
+    AlgorithmPhreaticLine,
 )
 from leveelogic.calculations.functions import sf_to_beta, get_model_factor, beta_to_pf
 from pathlib import Path
 import geolib as gl
 import matplotlib.pyplot as plt
+import logging
 from matplotlib.patches import Rectangle
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
-PARAMETERS_FILE = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
-OUTPUT_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
+PATH_TO_STIXFILES = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
+OUTPUT_PATH = "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
 CALCULATIONS_PATH = (
-    "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
+    "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
 )
+LOG_FILE = "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
 
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    filemode="w",
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
 
 # get the params from the csv file
 param_lines = [
@@ -41,40 +51,79 @@ for param_line in param_lines:
         start_chainage = float(s.split("-")[0])
         end_chainage = float(s.split("-")[1].replace(".stix", ""))
 
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
+        logging.debug(
             f"Handling dijkcode {dtcode} from {start_chainage:.2f} to {end_chainage:.2f} with minlevel {min_level:.2f} and maxlevel {max_level:.2f}, stepsize {step_size:.2f}.\n"
         )
-        flog.close()
     except Exception as e:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
+        logging.error(
             "Invalid parameter line '{param_line}' or invalid filename '{filename}' (should be <dijkcode>_<van>-<tot>.stix), got error '{e}'\n"
         )
-        flog.close()
 
     if step_size <= 0.0:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(f"Skipping '{filename}' because no step size is given.\n")
-        flog.close()
+        logging.info(f"Skipping '{filename}' because no step size is given.\n")
         continue
 
     subdir = filename.split("_")[0]
     try:
         ds = DStability.from_stix(Path(PATH_TO_STIXFILES) / subdir / filename)
 
-        alg = AlgorithmFCPhreaticLineWSBD(
-            ds=ds, max_level=max_level, min_level=min_level, step=step_size
-        )
+        # get the right scenario (named Norm) and stage (named Norm)
+        scenario_index = ds.get_scenario_index_by_label("Norm")
+        if scenario_index == -1:
+            logging.error("Could not find a scenario named 'Norm'")
+            continue
 
-        dss = alg.execute_multiple_results()
+        stage_index = ds.get_stage_index_by_label(scenario_index, "Norm")
+        if stage_index == -1:
+            logging.error("Could not find a stage named 'Norm'")
+            continue
+
+        ds.set_scenario_and_stage(scenario_index, stage_index)
+
+        # get the information from the waternet
+        wns = ds.waternet_settings
+
+        river_level = min_level
+        while river_level <= max_level:
+            alg = AlgorithmPhreaticLine(
+                ds=ds,
+                add_as_new_stage=False,
+                new_stage_name=f"Riverlevel={river_level:.2f}",
+                river_level_mhw=3.04,  # river_level,
+                river_level_ghw=wns["river_level_ghw"],
+                polder_level=wns["polder_level"],
+                B_offset=wns["B_offset"],
+                C_offset=wns["C_offset"],
+                E_offset=wns["D_offset"],
+                D_offset=wns["E_offset"],
+                surface_offset=0.01,
+                phreatic_level_embankment_top_waterside=wns[
+                    "phreatic_level_embankment_top_waterside"
+                ],
+                phreatic_level_embankment_top_landside=wns[
+                    "phreatic_level_embankment_top_landside"
+                ],
+                aquifer_id=wns["aquifer_id"],
+                aquifer_inside_aquitard_id=wns["aquifer_inside_aquitard_id"],
+                intrusion_length=wns["intrusion_length"],
+                hydraulic_head_pl2_inward=wns["hydraulic_head_pl2_inward"],
+                hydraulic_head_pl2_outward=wns["hydraulic_head_pl2_outward"],
+                inward_leakage_length_pl3=wns["inward_leakage_length_pl3"],
+                outward_leakage_length_pl3=wns["outward_leakage_length_pl3"],
+                inward_leakage_length_pl4=wns["inward_leakage_length_pl4"],
+                outward_leakage_length_pl4=wns["outward_leakage_length_pl4"],
+            )
+            ds = alg.execute()
+            ds.serialize(Path(OUTPUT_PATH) / f"{filename}_{river_level:.2f}.stix")
+            river_level += step_size
+
+        # dss = alg.execute_multiple_results()
     except Exception as e:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
+        logging.error(
             f"Skipping '{filename}' due to an error while running the algorithm, '{e}'.\n"
         )
-        flog.close()
         continue
+    break
 
     fig, ax = plt.subplots()
     fig.set_size_inches(10, 5)
