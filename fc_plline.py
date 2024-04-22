@@ -3,6 +3,7 @@ from leveelogic.deltares.algorithms.algorithm_phreatic_line import (
     AlgorithmPhreaticLine,
 )
 from leveelogic.calculations.functions import sf_to_beta, get_model_factor, beta_to_pf
+from leveelogic.deltares.dseries_calculator import DSeriesCalculator
 from pathlib import Path
 import geolib as gl
 import matplotlib.pyplot as plt
@@ -11,13 +12,13 @@ from matplotlib.patches import Rectangle
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
-PARAMETERS_FILE = "Y:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
-OUTPUT_PATH = "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
+PATH_TO_STIXFILES = "Z:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "Z:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
+OUTPUT_PATH = "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
 CALCULATIONS_PATH = (
-    "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
+    "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
 )
-LOG_FILE = "Y:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
+LOG_FILE = "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
 
 
 logging.basicConfig(
@@ -36,6 +37,9 @@ param_lines = [
 flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "w")
 flog.write("Starting fragility curves calculations.\n")
 flog.close()
+
+# use our own multithreaded calculator
+dsc = DSeriesCalculator()
 
 # handle all files
 for param_line in param_lines:
@@ -89,7 +93,7 @@ for param_line in param_lines:
                 ds=ds,
                 add_as_new_stage=False,
                 new_stage_name=f"Riverlevel={river_level:.2f}",
-                river_level_mhw=3.04,  # river_level,
+                river_level_mhw=river_level,
                 river_level_ghw=wns["river_level_ghw"],
                 polder_level=wns["polder_level"],
                 B_offset=wns["B_offset"],
@@ -114,16 +118,23 @@ for param_line in param_lines:
                 outward_leakage_length_pl4=wns["outward_leakage_length_pl4"],
             )
             ds = alg.execute()
-            ds.serialize(Path(OUTPUT_PATH) / f"{filename}_{river_level:.2f}.stix")
+            # ds.serialize(Path(OUTPUT_PATH) / f"{filename}_{river_level:.2f}.stix")
+            dsc.add_model(ds, f"{river_level:.2f}")
             river_level += step_size
 
         # dss = alg.execute_multiple_results()
+
     except Exception as e:
         logging.error(
             f"Skipping '{filename}' due to an error while running the algorithm, '{e}'.\n"
         )
         continue
-    break
+
+    try:
+        dsc.calculate()
+        results = dsc.get_model_result(scenario_label="Norm", calculation_label="Norm")
+    except Exception as e:
+        raise e
 
     fig, ax = plt.subplots()
     fig.set_size_inches(10, 5)
@@ -133,20 +144,12 @@ for param_line in param_lines:
     betas = []
     pfs = []
 
-    bm = gl.BaseModelList(models=[ds.model for ds in dss])
-    newbm = bm.execute(Path(CALCULATIONS_PATH), nprocesses=len(dss))
-    for i, model in enumerate(newbm.models):
-        outfilename = f"{Path(model.filename).stem}_{i}.stix"
-        model.serialize(Path(OUTPUT_PATH) / "calculations" / outfilename)
-        ds = DStability.from_stix(Path(OUTPUT_PATH) / "calculations" / outfilename)
-
-        sf = model.output[0].FactorOfSafety
-        model_factor = get_model_factor(
-            model.datastructure.calculationsettings[0].AnalysisType
-        )
-        waterlevels.append(ds.phreatic_line.Points[0].Z)
+    for result in results:
+        sf = result.safety_factor
+        model_factor = get_model_factor(result.analysis_type)
+        waterlevels.append(float(result.calculation_model_name))
         sfs.append(sf)
-        beta = sf_to_beta(sf, model_factor)
+        beta = sf_to_beta(sf, 1.0)  # sf_to_beta(sf, model_factor)
         betas.append(beta)
         pfs.append(beta_to_pf(beta))
 
