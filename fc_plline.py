@@ -2,12 +2,15 @@
 # from leveelogic.deltares.algorithms.algorithm_fc_phreatic_line_wsbd import (
 #    AlgorithmFCPhreaticLineWSBD,
 # )
-import shutil
-from leveelogic.calculations.functions import sf_to_beta, get_model_factor, beta_to_pf
+import shutil, os
+from helpers import sf_to_beta, get_model_factor, beta_to_pf, case_insensitive_glob
 from pathlib import Path
 from geolib.models import DStabilityModel
+from geolib import BaseModelList
 import matplotlib.pyplot as plt
+import logging
 from matplotlib.patches import Rectangle
+import numpy as np
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
@@ -17,6 +20,23 @@ OUTPUT_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
 CALCULATIONS_PATH = (
     "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
 )
+TEMP_CALCULATIONS_PATH = (
+    "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations\\Temp"
+)
+LOG_FILE = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
+MAX_THREADS = 8  # increase if you need more threads
+
+ADJUST_FOR_UPLIFT = False  # NOT IMPLEMENTED YET SO DON'T CHANGE FOR NOW
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    filemode="w",
+    format="%(asctime)s %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+    level=logging.INFO,
+)
+
+logging.warning("Note that adjustment for uplift is not yet implemented!")
 
 
 # get the params from the csv file
@@ -24,9 +44,6 @@ param_lines = [
     l.strip() for l in open(PARAMETERS_FILE, "r").readlines() if l.strip() != ""
 ][1:]
 
-flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "w")
-flog.write("Starting fragility curves calculations.\n")
-flog.close()
 
 # handle all files
 for param_line in param_lines:
@@ -42,55 +59,92 @@ for param_line in param_lines:
         start_chainage = float(s.split("-")[0])
         end_chainage = float(s.split("-")[1].replace(".stix", ""))
 
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
-            f"Handling dijkcode {dtcode} from {start_chainage:.2f} to {end_chainage:.2f} with minlevel {min_level:.2f} and maxlevel {max_level:.2f}, stepsize {step_size:.2f}.\n"
+        logging.info(
+            f"Handling dijkcode {dtcode} from {start_chainage:.2f} to {end_chainage:.2f} with minlevel {min_level:.2f} and maxlevel {max_level:.2f}, stepsize {step_size:.2f}."
         )
-        flog.close()
     except Exception as e:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
-            "Invalid parameter line '{param_line}' or invalid filename '{filename}' (should be <dijkcode>_<van>-<tot>.stix), got error '{e}'\n"
+        logging.error(
+            "Invalid parameter line '{param_line}' or invalid filename '{filename}' (should be <dijkcode>_<van>-<tot>.stix), got error '{e}'"
         )
-        flog.close()
 
     if step_size <= 0.0:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(f"Skipping '{filename}' because no step size is given.\n")
-        flog.close()
+        logging.info(f"Skipping '{filename}' because no step size is given.")
         continue
 
     subdir = filename.split("_")[0]
+
+    #############################################################
+    # EXTRA CODE                                                #
+    #                                                           #
+    # Check the difference between the current calculation      #
+    # and the one generated using the waternet creator code     #
+    #############################################################
+    ds_org = DStabilityModel()
     try:
-        river_level = max_level
-        # copy the file
-        filepath = str(Path(PATH_TO_STIXFILES) / subdir / filename)
-        new_filepath = str(Path(CALCULATIONS_PATH) / f"{filename}_{river_level}.stix")
-        shutil.copyfile(filepath, new_filepath)
-
-        ds = DStabilityModel()
-        ds.parse(new_filepath)
-        ds.set_scenario_and_stage_by_label("Norm", "Norm")
-        ds.generate_waternet(river_level_mhw=river_level)
-        ds.serialize(new_filepath)
-        # ds.gene
-
-        # alg = AlgorithmFCPhreaticLineWSBD(
-        #    ds=ds, max_level=max_level, min_level=min_level, step=step_size
-        # )
-
-        # dss = alg.execute_multiple_results()
+        filepath = Path(PATH_TO_STIXFILES) / subdir / filename
+        ds_org.parse(filepath)
+        ds_org.execute()
+        sf = ds_org.output[-1].FactorOfSafety
+        riverlevel = ds_org.phreatic_line.Points[0].Z
+        logging.info(f"Original safety factor at river level {riverlevel} = {sf:.3f}")
     except Exception as e:
-        flog = open(Path(OUTPUT_PATH) / "fc_plline.log", "a+")
-        flog.write(
-            f"Skipping '{filename}' due to an error while running the algorithm, '{e}'.\n"
+        logging.error(
+            f"Cannot determine the safety factor of the original calculation; {e}"
         )
-        flog.close()
-        raise e
+
+    try:
+        filepath = Path(PATH_TO_STIXFILES) / subdir / f"{filename}.compare.stix"
+        ds_org.serialize(filepath)
+        ds_compare = DStabilityModel()
+        ds_compare.parse(filepath)
+        ds_compare.generate_waternet(
+            river_level_mhw=riverlevel, adjust_for_uplift=ADJUST_FOR_UPLIFT
+        )
+        ds_compare.serialize(filepath)
+        ds_compare.execute()
+        sf = ds_compare.output[-1].FactorOfSafety
+        riverlevel = ds_compare.phreatic_line.Points[0].Z
+        logging.info(f"Generated safety factor at river level {riverlevel} = {sf:.3f}")
+    except Exception as e:
+        logging.error(
+            f"Error creating a calculation with the same riverlevel using the waternet code; {e}"
+        )
+
+    try:
+        models_to_calculate = []
+        for river_level in np.arange(min_level, max_level + 0.5 * step_size, step_size):
+            logging.info(f"Handling river level {river_level}")
+            # copy the file
+            filepath = str(Path(PATH_TO_STIXFILES) / subdir / filename)
+            new_filepath = str(
+                Path(CALCULATIONS_PATH) / f"{filename}_{river_level}.stix"
+            )
+            shutil.copyfile(filepath, new_filepath)
+
+            ds = DStabilityModel()
+            ds.parse(new_filepath)
+            ds.set_scenario_and_stage_by_label("Norm", "Norm")
+            # TODO > uplift implementeren
+            ds.generate_waternet(
+                river_level_mhw=river_level, adjust_for_uplift=ADJUST_FOR_UPLIFT
+            )
+            ds.serialize(new_filepath)
+            models_to_calculate.append(ds)
+    except Exception as e:
+        logging.error(
+            f"Skipping '{filename}' due to an error while running the algorithm, '{e}'."
+        )
+
+    if len(models_to_calculate) == 0:
+        logging.info(f"Skipping '{filename}, got 0 calculations")
         continue
 
-    break
+    logging.info(f"Starting {len(models_to_calculate)} calculation(s)")
+    bm = BaseModelList(models=models_to_calculate)
+    newbm = bm.execute(Path(TEMP_CALCULATIONS_PATH), nprocesses=MAX_THREADS)
+    logging.info("Calculations ready")
 
+    plt.clf()
     fig, ax = plt.subplots()
     fig.set_size_inches(10, 5)
 
@@ -99,101 +153,110 @@ for param_line in param_lines:
     betas = []
     pfs = []
 
-    # bm = gl.BaseModelList(models=[ds.model for ds in dss])
-    # newbm = bm.execute(Path(CALCULATIONS_PATH), nprocesses=len(dss))
-    # for i, model in enumerate(newbm.models):
-    #     outfilename = f"{Path(model.filename).stem}_{i}.stix"
-    #     model.serialize(Path(OUTPUT_PATH) / "calculations" / outfilename)
-    #     ds = DStability.from_stix(Path(OUTPUT_PATH) / "calculations" / outfilename)
+    for i, model in enumerate(newbm.models):
+        ds = DStabilityModel()
 
-    #     sf = model.output[0].FactorOfSafety
-    #     model_factor = get_model_factor(
-    #         model.datastructure.calculationsettings[0].AnalysisType
-    #     )
-    #     waterlevels.append(ds.phreatic_line.Points[0].Z)
-    #     sfs.append(sf)
-    #     beta = sf_to_beta(sf, model_factor)
-    #     betas.append(beta)
-    #     pfs.append(beta_to_pf(beta))
+        try:
+            river_level = float(model.filename.name.split("_")[-1].replace(".stix", ""))
+            waterlevels.append(river_level)
+            sf = model.output[-1].FactorOfSafety
+            logging.info(f"Safety factor for river level {river_level} = {sf:.3f}")
+            sfs.append(sf)
+            model_factor = get_model_factor(
+                model.datastructure.calculationsettings[-1].AnalysisType
+            )
+            beta = sf_to_beta(sf, model_factor)
+            betas.append(beta)
+            pfs.append(beta_to_pf(beta))
 
-    # xmin = min(waterlevels)
-    # xmax = max(waterlevels)
-    # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
-    # ax1.plot([xmin, xmax], [SF_REQUIRED[dtcode], SF_REQUIRED[dtcode]], "r--")
-    # ax1.text(
-    #     xmin,
-    #     SF_REQUIRED[dtcode],
-    #     f"minimale veiligheidsfactor ({SF_REQUIRED[dtcode]:.3f})",
-    # )
-    # ax1.plot(waterlevels, sfs, "o-")
-    # ax1.set_xlabel("Water level [m tov NAP]")
-    # ax1.set_ylabel("Safety Factor")
-    # ax2.set_yscale("log")
+        except Exception as e:
+            logging.error(
+                f"Error getting safety factor from '{model.filename.name}'; '{e}'"
+            )
 
-    # p_eis_sig = P_EIS_SIG[dtcode]
-    # p_eis_sig_dsn = P_EIS_SIG_DSN[dtcode]
-    # p_eis_ond = P_EIS_OND[dtcode]
-    # p_eis_ond_dsn = P_EIS_OND_DSN[dtcode]
+    xmin = min(waterlevels)
+    xmax = max(waterlevels)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+    ax1.plot([xmin, xmax], [SF_REQUIRED[dtcode], SF_REQUIRED[dtcode]], "r--")
+    ax1.text(
+        xmin,
+        SF_REQUIRED[dtcode],
+        f"minimale veiligheidsfactor ({SF_REQUIRED[dtcode]:.3f})",
+    )
+    ax1.plot(waterlevels, sfs, "o-")
+    ax1.set_xlabel("Water level [m tov NAP]")
+    ax1.set_ylabel("Safety Factor")
+    ax2.set_yscale("log")
 
-    # aIv = (
-    #     0,
-    #     1 / 30 * P_EIS_SIG_DSN[dtcode],
-    #     "Iv voldoet ruim aan signaleringswaarde",
-    #     "#00ff00",
-    # )
-    # aIIv = (
-    #     1 / 30 * P_EIS_SIG_DSN[dtcode],
-    #     P_EIS_SIG_DSN[dtcode],
-    #     "IIv voldoet aan signaleringswaarde",
-    #     "#76933c",
-    # )
-    # aIIIv = (
-    #     P_EIS_SIG_DSN[dtcode],
-    #     P_EIS_OND_DSN[dtcode],
-    #     "IIIv voldoet aan de ondergrens en mogelijk de signaleringswaarde",
-    #     "#ffff00",
-    # )
-    # aIVv = (
-    #     P_EIS_OND_DSN[dtcode],
-    #     P_EIS_OND[dtcode],
-    #     "IVv voldoet mogelijk aan de ondergrens of aan de signaleringwaarde",
-    #     "#ccc0da",
-    # )
-    # aVv = (
-    #     P_EIS_OND[dtcode],
-    #     30 * P_EIS_OND[dtcode],
-    #     "Vv voldoet niet aan de ondergrens",
-    #     "#ff9900",
-    # )
-    # aVIv = (
-    #     30 * P_EIS_OND[dtcode],
-    #     1,
-    #     "VIv voldoet ruim niet aan de ondergrens",
-    #     "#ff0000",
-    # )
+    p_eis_sig = P_EIS_SIG[dtcode]
+    p_eis_sig_dsn = P_EIS_SIG_DSN[dtcode]
+    p_eis_ond = P_EIS_OND[dtcode]
+    p_eis_ond_dsn = P_EIS_OND_DSN[dtcode]
 
-    # for top, bottom, label, color in [aIv, aIIv, aIIIv, aIVv, aVv, aVIv]:
-    #     ax2.add_patch(
-    #         Rectangle(
-    #             (xmin, bottom),
-    #             (xmax - xmin),
-    #             (top - bottom),
-    #             facecolor=color,
-    #             fill=True,
-    #         )
-    #     )
-    #     ax2.plot([xmin, xmax], [bottom, bottom], "k--")
-    #     ax2.text(xmin, (top + bottom) / 2.0, label)
+    aIv = (
+        0,
+        1 / 30 * P_EIS_SIG_DSN[dtcode],
+        "Iv voldoet ruim aan signaleringswaarde",
+        "#00ff00",
+    )
+    aIIv = (
+        1 / 30 * P_EIS_SIG_DSN[dtcode],
+        P_EIS_SIG_DSN[dtcode],
+        "IIv voldoet aan signaleringswaarde",
+        "#76933c",
+    )
+    aIIIv = (
+        P_EIS_SIG_DSN[dtcode],
+        P_EIS_OND_DSN[dtcode],
+        "IIIv voldoet aan de ondergrens en mogelijk de signaleringswaarde",
+        "#ffff00",
+    )
+    aIVv = (
+        P_EIS_OND_DSN[dtcode],
+        P_EIS_OND[dtcode],
+        "IVv voldoet mogelijk aan de ondergrens of aan de signaleringwaarde",
+        "#ccc0da",
+    )
+    aVv = (
+        P_EIS_OND[dtcode],
+        30 * P_EIS_OND[dtcode],
+        "Vv voldoet niet aan de ondergrens",
+        "#ff9900",
+    )
+    aVIv = (
+        30 * P_EIS_OND[dtcode],
+        1,
+        "VIv voldoet ruim niet aan de ondergrens",
+        "#ff0000",
+    )
 
-    # ax2.plot(waterlevels, pfs, "o-")
-    # ax2.set_ylim(1e-8, 1.0)
-    # ax2.set_xlabel("Water level [m tov NAP]")
-    # ax2.set_ylabel("Faalkans")
-    # ax1.grid()
-    # ax2.grid()
+    for top, bottom, label, color in [aIv, aIIv, aIIIv, aIVv, aVv, aVIv]:
+        ax2.add_patch(
+            Rectangle(
+                (xmin, bottom),
+                (xmax - xmin),
+                (top - bottom),
+                facecolor=color,
+                fill=True,
+            )
+        )
+        ax2.plot([xmin, xmax], [bottom, bottom], "k--")
+        ax2.text(xmin, (top + bottom) / 2.0, label)
 
-    # fig.suptitle(
-    #     f"Fragility curve dijktraject {dtcode} van {start_chainage:.2f}km tot {end_chainage:.2f}km"
-    # )
-    # figname = f"{dtcode}_{start_chainage:.2f}{end_chainage:.2f}.png"
-    # fig.savefig(Path(OUTPUT_PATH) / figname)
+    ax2.plot(waterlevels, pfs, "o-")
+    ax2.set_ylim(1e-8, 1.0)
+    ax2.set_xlabel("Water level [m tov NAP]")
+    ax2.set_ylabel("Faalkans")
+    ax1.grid()
+    ax2.grid()
+
+    fig.suptitle(
+        f"Fragility curve dijktraject {dtcode} van {start_chainage:.2f}km tot {end_chainage:.2f}km"
+    )
+    figname = f"{dtcode}_{start_chainage:.2f}_{end_chainage:.2f}.png"
+    fig.savefig(Path(OUTPUT_PATH) / figname)
+
+    # map met berekeningen leegmaken
+    files = case_insensitive_glob(TEMP_CALCULATIONS_PATH, ".stix")
+    for f in files:
+        os.remove(f)
