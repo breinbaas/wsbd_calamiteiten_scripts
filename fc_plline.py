@@ -14,19 +14,19 @@ import numpy as np
 
 from settings import SF_REQUIRED, P_EIS_OND_DSN, P_EIS_SIG, P_EIS_OND, P_EIS_SIG_DSN
 
-PATH_TO_STIXFILES = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
-PARAMETERS_FILE = "D:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
-OUTPUT_PATH = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
+PATH_TO_STIXFILES = "Z:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles"
+PARAMETERS_FILE = "Z:\\Documents\\Klanten\\OneDrive\\WSBD\\calamiteiten\\StixFiles\\parameters_fc_plline.csv"
+OUTPUT_PATH = "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves"
 CALCULATIONS_PATH = (
-    "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
+    "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations"
 )
 TEMP_CALCULATIONS_PATH = (
-    "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations\\Temp"
+    "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\Calculations\\Temp"
 )
-LOG_FILE = "D:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
+LOG_FILE = "Z:\\Documents\\Klanten\\Output\\WSBD\\FragilityCurves\\fc_plline.log"
 MAX_THREADS = 8  # increase if you need more threads
 
-ADJUST_FOR_UPLIFT = False  # NOT IMPLEMENTED YET SO DON'T CHANGE FOR NOW
+ADJUST_FOR_UPLIFT = True
 
 logging.basicConfig(
     filename=LOG_FILE,
@@ -36,7 +36,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-logging.warning("Note that adjustment for uplift is not yet implemented!")
+# logging.warning("Note that adjustment for uplift is not yet implemented!")
 
 
 # get the params from the csv file
